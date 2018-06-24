@@ -1,9 +1,41 @@
-/* global ValidatedMethod:true */
+import { check, Match } from 'meteor/check';
+import { Meteor } from 'meteor/meteor';
 
-ValidatedMethod = class ValidatedMethod {
+const flatten = list => list.reduce((a, b) => a.concat(Array.isArray(b) ? flatten(b) : b), []);
+
+// Mixins get a chance to transform the arguments before they are passed to the actual Method
+function applyMixins(args, mixins) {
+  // You can pass nested arrays so that people can ship mixin packs
+  const flatMixins = flatten(mixins);
+  // Save name of the method here, so we can attach it to potential error messages
+  const { name } = args;
+
+  flatMixins.forEach((mixin) => {
+    args = mixin(args);
+
+    if (!Match.test(args, Object)) {
+      const functionName = mixin.toString().match(/function\s(\w+)/);
+      let msg = 'One of the mixins';
+
+      if (functionName) {
+        msg = `The function '${functionName[1]}'`;
+      }
+
+      throw new Error(`Error in ${name} method: ${msg} didn't return the options object.`);
+    }
+  });
+
+  return args;
+}
+
+const noop = () => {
+};
+
+class ValidatedMethod {
   constructor(options) {
     // Default to no mixins
     options.mixins = options.mixins || [];
+    options.secure = options.secure || false;
     check(options.mixins, [Function]);
     check(options.name, String);
     options = applyMixins(options, options.mixins);
@@ -13,8 +45,9 @@ ValidatedMethod = class ValidatedMethod {
     options.connection = options.connection || Meteor;
 
     // Allow validate: null shorthand for methods that take no arguments
-    if (options.validate === null) {
-      options.validate = function () {};
+    options.validate = options.validate || noop;
+    if (options.secure && Meteor.isClient) {
+      options.run = noop;
     }
 
     // If this is null/undefined, make it an empty object
@@ -22,6 +55,7 @@ ValidatedMethod = class ValidatedMethod {
 
     check(options, Match.ObjectIncluding({
       name: String,
+      secure: Boolean,
       validate: Function,
       run: Function,
       mixins: [Function],
@@ -44,21 +78,47 @@ ValidatedMethod = class ValidatedMethod {
     // Attach all options to the ValidatedMethod instance
     Object.assign(this, options);
 
-    const method = this;
-    this.connection.methods({
-      [options.name](args) {
-        // Silence audit-argument-checks since arguments are always checked when using this package
-        check(args, Match.Any);
-        const methodInvocation = this;
+    // if secure, create method only on server
+    if (!options.secure || Meteor.isServer) {
+      const method = this;
+      this.connection.methods({
+        [options.name](args) {
+          // Silence audit-argument-checks since arguments are always checked when using this
+          // package
+          check(args, Match.Any);
+          const methodInvocation = this;
 
-        return method._execute(methodInvocation, args);
-      }
+          return method._execute(methodInvocation, args);
+        },
+      });
+    }
+  }
+
+  secureRun({ run, validate }) {
+    if (Meteor.isClient) {
+      throw new Meteor.Error('secure-run-client', 'Secure run is Server only!');
+    }
+    if (validate) {
+      this.validate = validate;
+    }
+    this.run = run;
+  }
+
+  callPromise(args) {
+    return new Promise((resolve, reject) => {
+      this.call(args, (err, result) => {
+        if (err) {
+          reject(err);
+        } else {
+          resolve(result);
+        }
+      });
     });
   }
 
   call(args, callback) {
     // Accept calling with just a callback
-    if ( typeof args === 'function' ) {
+    if (typeof args === 'function') {
       callback = args;
       args = {};
     }
@@ -86,51 +146,12 @@ ValidatedMethod = class ValidatedMethod {
     const validateResult = this.validate.bind(methodInvocation)(args);
 
     if (typeof validateResult !== 'undefined') {
-      throw new Error(`Returning from validate doesn't do anything; \
-perhaps you meant to throw an error?`);
+      throw new Error('Returning from validate doesn\'t do anything; \
+perhaps you meant to throw an error?');
     }
 
     return this.run.bind(methodInvocation)(args);
   }
-};
-
-// Mixins get a chance to transform the arguments before they are passed to the actual Method
-function applyMixins(args, mixins) {
-  // You can pass nested arrays so that people can ship mixin packs
-  const flatMixins = flatten(mixins);
-  // Save name of the method here, so we can attach it to potential error messages
-  const {name} = args;
-
-  flatMixins.forEach((mixin) => {
-    args = mixin(args);
-
-    if(!Match.test(args, Object)) {
-      const functionName = mixin.toString().match(/function\s(\w+)/);
-      let msg = 'One of the mixins';
-
-      if(functionName) {
-        msg = `The function '${functionName[1]}'`;
-      }
-
-      throw new Error(`Error in ${name} method: ${msg} didn't return the options object.`);
-    }
-  });
-
-  return args;
 }
 
-// flatten utility function
-function flatten(input, output) {
-  output = output || [];
-  let idx = output.length;
-  for (let i = 0, length = input.length; i < length; i++) {
-    let value = input[i];
-    if (Array.isArray(value)) {
-      // Flatten current level of array or arguments object.
-      flatten(value, output);
-      idx = output.length;
-      output[idx++] = value;
-    }
-  }
-  return output;
-}
+export { ValidatedMethod };

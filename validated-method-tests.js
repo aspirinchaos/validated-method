@@ -1,9 +1,12 @@
+import { ValidatedMethod } from 'meteor/validated-method';
+import { SimpleSchema } from 'meteor/aldeed:simple-schema';
+
 const plainMethod = new ValidatedMethod({
   name: 'plainMethod',
   validate: new SimpleSchema({}).validator(),
   run() {
     return 'result';
-  }
+  },
 });
 
 const noArgsMethod = new ValidatedMethod({
@@ -11,7 +14,7 @@ const noArgsMethod = new ValidatedMethod({
   validate: null,
   run() {
     return 'result';
-  }
+  },
 });
 
 const methodWithArgs = new ValidatedMethod({
@@ -22,7 +25,7 @@ const methodWithArgs = new ValidatedMethod({
   }).validator(),
   run() {
     return 'result';
-  }
+  },
 });
 
 const methodThrowsImmediately = new ValidatedMethod({
@@ -30,7 +33,7 @@ const methodThrowsImmediately = new ValidatedMethod({
   validate: null,
   run() {
     throw new Meteor.Error('error');
-  }
+  },
 });
 
 const methodReturnsName = new ValidatedMethod({
@@ -38,7 +41,7 @@ const methodReturnsName = new ValidatedMethod({
   validate: null,
   run() {
     return this.name;
-  }
+  },
 });
 
 const methodWithSchemaMixin = new ValidatedMethod({
@@ -50,7 +53,7 @@ const methodWithSchemaMixin = new ValidatedMethod({
   }),
   run() {
     return 'result';
-  }
+  },
 });
 
 let resultReceived = false;
@@ -58,13 +61,13 @@ const methodWithApplyOptions = new ValidatedMethod({
   name: 'methodWithApplyOptions',
   validate: new SimpleSchema({}).validator(),
   applyOptions: {
-    onResultReceived: function() {
+    onResultReceived: function () {
       resultReceived = true;
-    }
+    },
   },
   run() {
     return 'result';
-  }
+  },
 });
 
 function schemaMixin(methodOptions) {
@@ -95,7 +98,6 @@ describe('mdg:method', () => {
     });
   });
 
-
   [methodWithArgs, methodWithSchemaMixin].forEach((method) => {
     it('checks schema ' + method.name, (done) => {
       method.call({}, (error, result) => {
@@ -104,7 +106,7 @@ describe('mdg:method', () => {
 
         method.call({
           int: 5,
-          string: "what",
+          string: 'what',
         }, (error, result) => {
           // All good!
           assert.equal(result, 'result');
@@ -133,22 +135,26 @@ describe('mdg:method', () => {
     assert.throws(() => {
       new ValidatedMethod({
         name: 'methodWithFaultySchemaMixin',
-        mixins: [function nonReturningFunction() {}],
+        mixins: [function nonReturningFunction() {
+        }],
         schema: null,
         run() {
           return 'result';
-        }
+        },
       });
     }, /Error in methodWithFaultySchemaMixin method: The function 'nonReturningFunction' didn't return the options object/);
 
     assert.throws(() => {
       new ValidatedMethod({
         name: 'methodWithFaultySchemaMixin',
-        mixins: [function (args) { return args}, function () {}],
+        mixins: [function (args) {
+          return args;
+        }, function () {
+        }],
         schema: null,
         run() {
           return 'result';
-        }
+        },
       });
     }, /Error in methodWithFaultySchemaMixin method: One of the mixins didn't return the options object/);
   });
