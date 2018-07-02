@@ -1,7 +1,7 @@
 Package.describe({
   name: 'validated-method',
   summary: 'A simple wrapper for Meteor.methods',
-  version: '1.3.0',
+  version: '1.3.1',
   documentation: 'README.md',
 });
 

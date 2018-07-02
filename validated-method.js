@@ -1,9 +1,18 @@
 import { check, Match } from 'meteor/check';
 import { Meteor } from 'meteor/meteor';
 
+/**
+ * Своя функция для уменьшения количества зависимостей
+ * @param list {array}
+ */
 const flatten = list => list.reduce((a, b) => a.concat(Array.isArray(b) ? flatten(b) : b), []);
 
-// Mixins get a chance to transform the arguments before they are passed to the actual Method
+/**
+ * Функция для применения миксинов в методе
+ * @param args {object}
+ * @param mixins {array}
+ * @returns {*}
+ */
 function applyMixins(args, mixins) {
   // You can pass nested arrays so that people can ship mixin packs
   const flatMixins = flatten(mixins);
@@ -28,6 +37,10 @@ function applyMixins(args, mixins) {
   return args;
 }
 
+/**
+ * Функция пустышка, вместо постоянной проверки есть функция или нет
+ * присвоим в инициализации пустышку, если ничего не передали
+ */
 const noop = () => {
 };
 
@@ -46,7 +59,7 @@ class ValidatedMethod {
 
     // Allow validate: null shorthand for methods that take no arguments
     options.validate = options.validate || noop;
-    if (options.secure && Meteor.isClient) {
+    if (options.secure && !options.run) {
       options.run = noop;
     }
 
@@ -78,32 +91,47 @@ class ValidatedMethod {
     // Attach all options to the ValidatedMethod instance
     Object.assign(this, options);
 
-    // if secure, create method only on server
-    if (!options.secure || Meteor.isServer) {
-      const method = this;
-      this.connection.methods({
-        [options.name](args) {
-          // Silence audit-argument-checks since arguments are always checked when using this
-          // package
-          check(args, Match.Any);
-          const methodInvocation = this;
+    const method = this;
+    // обертка создания метеоровского метода
+    this.connection.methods({
+      [options.name](args) {
+        // Silence audit-argument-checks since arguments are always checked when using this
+        // package
+        check(args, Match.Any);
+        const methodInvocation = this;
 
-          return method._execute(methodInvocation, args);
-        },
-      });
-    }
+        return method._execute(methodInvocation, args);
+      },
+    });
   }
 
-  secureRun({ run, validate }) {
+  /**
+   * Добавление секьюрного вызова
+   * @param validate {function} - валидация данных
+   * @param run {function} - основная функция метода
+   */
+  secureRun({ validate, run }) {
     if (Meteor.isClient) {
-      throw new Meteor.Error('secure-run-client', 'Secure run is Server only!');
+      throw new Meteor.Error('secure-run-client', 'Защищенный метод добавляется только на сервере!');
+    }
+    if (validate && typeof validate !== 'function') {
+      throw new Meteor.Error('secure-run-validate', 'Validate должна быть функцией!');
+    }
+    if (typeof run !== 'function') {
+      throw new Meteor.Error('secure-run-not-function', 'Run должна быть функцией!');
     }
     if (validate) {
-      this.validate = validate;
+      this.serverValidate = validate;
     }
-    this.run = run;
+    this.serverRun = run;
   }
 
+
+  /**
+   * Вызов метода с использованием Promise
+   * @param args [{object|string|number}]
+   * @returns {Promise<any>}
+   */
   callPromise(args) {
     return new Promise((resolve, reject) => {
       this.call(args, (err, result) => {
@@ -116,6 +144,12 @@ class ValidatedMethod {
     });
   }
 
+  /**
+   * Вызов метода
+   * @param args [{object|string|number}]
+   * @param callback [{function}]
+   * @returns {*}
+   */
   call(args, callback) {
     // Accept calling with just a callback
     if (typeof args === 'function') {
@@ -137,19 +171,36 @@ class ValidatedMethod {
     }
   }
 
+  /**
+   * Метод вызывается в методе для отработки обертки
+   * @param methodInvocation {object} - контекст метеоровского метода
+   * @param args [{object|string|number}]
+   * @returns {*}
+   * @private
+   */
   _execute(methodInvocation, args) {
     methodInvocation = methodInvocation || {};
 
     // Add `this.name` to reference the Method name
     methodInvocation.name = this.name;
 
-    const validateResult = this.validate.bind(methodInvocation)(args);
-
-    if (typeof validateResult !== 'undefined') {
-      throw new Error('Returning from validate doesn\'t do anything; \
-perhaps you meant to throw an error?');
+    let validateResult = this.validate.bind(methodInvocation)(args);
+    // serverValidate и serverRun заданы только на сервере!
+    if (this.serverValidate) {
+      validateResult = this.serverValidate.bind(methodInvocation)(args);
     }
 
+    if (typeof validateResult !== 'undefined') {
+      throw new Meteor.Error('Validate не должна что либо возвращать, используйте throw вместо return');
+    }
+    // serverValidate и serverRun заданы только на сервере!
+    if (this.serverRun) {
+      const runResult = this.run.bind(methodInvocation)(args);
+      if (typeof runResult !== 'undefined') {
+        throw new Meteor.Error('В защищенном методе возвращать что либо должен только secureRun!');
+      }
+      return this.serverRun.bind(methodInvocation)(args);
+    }
     return this.run.bind(methodInvocation)(args);
   }
 }
