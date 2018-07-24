@@ -3,7 +3,9 @@ import { Meteor } from 'meteor/meteor';
 
 /**
  * Своя функция для уменьшения количества зависимостей
+ * @function
  * @param list {array}
+ * @returns {array}
  */
 const flatten = list => list.reduce((a, b) => a.concat(Array.isArray(b) ? flatten(b) : b), []);
 

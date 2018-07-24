@@ -1,5 +1,20 @@
 # Change log
 
+## 1.3.1 
+
+- Separate run for client and server
+
+## 1.3.0 
+
+- Update api version to 1.5
+- Rename to `validated-method` for local use
+- es6 rewrite, export
+- add secureRun for server-only run
+
+## 1.2.0
+
+- Remove underscore
+
 ## 1.1.0
 
 - Allow overriding default `Meteor.apply` options via `applyOptions` option. [#46](https://github.com/meteor/validated-method/pull/46)

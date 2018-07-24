@@ -189,7 +189,30 @@ Other options you might be interested in passing are:
 
 #### Secret server code
 
-If you want to keep some of your method code secret on the server, check out [Served Files](http://guide.meteor.com/security.html#served-files) from the Meteor Guide.
+If you want to keep some of your method code secret on the server, add `secure:true` to method definition:
+```js
+// client & server file, e.g. /lib/methods.js
+const secureMethod = new ValidatedMethod({
+  name: 'secureMethod',
+  secure: true,
+  // call for client and server method
+  validate(args) {
+    // ...
+  },
+});
+
+// server file, e.g. /server/secure.js
+import {secureMethod} from '/lib/methods';
+
+// run is server-only execute 
+secureMethod.secureRun({
+  run(args) {
+    // ...
+  }
+})
+
+```
+
 
 ### Using a ValidatedMethod
 
@@ -211,6 +234,20 @@ makePrivate.call({
 
   doSomethingWithResult(res);
 });
+```
+
+#### method#callPromise(args: Object)
+
+Call a method with `Promise` like so:
+
+```js
+import {
+  makePrivate,
+} from '/imports/api/lists/methods';
+
+makePrivate.callPromise({listId: list._id})
+  .then((res) => doSomethingWithResult(res))
+  .catch((err) => handleError(err.error));
 ```
 
 The return value of the server-side method is available as the second argument of the method
